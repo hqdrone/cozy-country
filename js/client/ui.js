@@ -24,6 +24,8 @@ export class UI {
     $('btn-bag').innerHTML = imgHTML('backpack');
     $('btn-build').innerHTML = imgHTML('build');
     $('btn-gear').innerHTML = imgHTML('gear');
+    $('btn-zin').innerHTML = imgHTML('zoom_in');
+    $('btn-zout').innerHTML = imgHTML('zoom_out');
     $('stage-ico').src = iconURL('house');
     this.bindButtons();
     this.refresh(true);
@@ -39,6 +41,7 @@ export class UI {
     press($('btn-build'), () => g.toggleBuild());
     press($('btn-gear'), () => this.openSettings());
     press($('btn-stage'), () => this.openStage());
+    for (const [id, d] of [['btn-zin', 1], ['btn-zout', -1]]) $(id).addEventListener('click', e => { e.stopPropagation(); g.sound.unlock(); g.input.zoom(d); });
     press($('hint'), () => this.nextLine());
     $('panel-wrap').addEventListener('click', e => { if (e.target.id === 'panel-wrap') this.close(); });
     $('panel').addEventListener('click', e => this.onPanelClick(e));
@@ -347,6 +350,7 @@ export class UI {
   showBuild(on) {
     $('buildbar').classList.toggle('hidden', !on);
     $('br').classList.toggle('hidden', on);
+    document.body.classList.toggle('building', on);
     this._bbKey = '';
     if (on) this.renderBuildbar();
     this.updateHint();

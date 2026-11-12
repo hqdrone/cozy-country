@@ -6,32 +6,62 @@ export class Input {
     this.keys = new Set();
     this.down = null;
     this.stepT = 0;
+    this.pts = new Map();   // активные касания (для щипка)
+    this.pinch = null;
+    this.wheelAcc = 0;
     canvas.addEventListener('pointerdown', e => this.onDown(e));
     canvas.addEventListener('pointermove', e => this.onMove(e));
     canvas.addEventListener('pointerup', e => this.onUp(e));
-    canvas.addEventListener('pointercancel', () => { this.down = null; });
+    canvas.addEventListener('pointercancel', e => { this.pts.delete(e.pointerId); this.down = null; this.pinch = null; });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('wheel', e => this.onWheel(e), { passive: false });
+    // Safari: свой жест масштаба страницы — отключаем, зумим игру сами
+    for (const ev of ['gesturestart', 'gesturechange']) document.addEventListener(ev, e => e.preventDefault());
     window.addEventListener('keydown', e => this.onKey(e, true));
     window.addEventListener('keyup', e => this.onKey(e, false));
     window.addEventListener('blur', () => this.keys.clear());
   }
 
+  zoom(d) {
+    const g = this.game;
+    if (g.renderer.zoomStep(d)) { if (!g.build) g.snapCam(); g.sound.play('pop'); }
+  }
+
   onDown(e) {
     this.game.sound.unlock();
-    this.cv.setPointerCapture && this.cv.setPointerCapture(e.pointerId);
+    try { this.cv.setPointerCapture(e.pointerId); } catch (err) { /* не критично */ }
+    this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pts.size === 2) {
+      // второй палец — начинаем щипок, тап отменяется
+      const [a, b] = [...this.pts.values()];
+      this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) };
+      this.down = null;
+      return;
+    }
+    if (this.pts.size > 2) return;
     this.down = { x: e.clientX, y: e.clientY, moved: false, cam: this.game.build ? { ...this.game.build.cam } : null };
   }
   onMove(e) {
     const g = this.game;
-    if (g.build) {
+    if (this.pts.has(e.pointerId)) this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pinch && this.pts.size >= 2) {
+      const [a, b] = [...this.pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      // шаг масштаба, когда пальцы разошлись/сошлись заметно
+      const step = 1 + 0.6 / Math.max(1, g.renderer.scale * 0.5);
+      if (d > this.pinch.d * step) { this.zoom(1); this.pinch.d = d; }
+      else if (d < this.pinch.d / step) { this.zoom(-1); this.pinch.d = d; }
+      return;
+    }
+    if (g.build && e.pointerType === 'mouse') {
       const w = g.renderer.screenToWorld(e.clientX, e.clientY);
       g.buildHover(Math.floor(w.x / 16), Math.floor(w.y / 16));
     }
     if (!this.down) return;
     const dx = e.clientX - this.down.x, dy = e.clientY - this.down.y;
-    if (Math.hypot(dx, dy) > 10) this.down.moved = true;
+    if (Math.hypot(dx, dy) > 12) this.down.moved = true;
     if (g.build && this.down.moved) {
-      const k = g.renderer.dpr / g.renderer.scale;
+      const k = g.renderer.worldPerCss();
       g.build.cam.x = this.down.cam.x - dx * k;
       g.build.cam.y = this.down.cam.y - dy * k;
       const sc = g.state.scenes[g.p.scene];
@@ -40,12 +70,21 @@ export class Input {
     }
   }
   onUp(e) {
+    this.pts.delete(e.pointerId);
+    if (this.pinch) { if (this.pts.size < 2) this.pinch = null; this.down = null; return; }
     if (!this.down) return;
     const d = this.down;
     this.down = null;
     if (d.moved) return;
     const w = this.game.renderer.screenToWorld(e.clientX, e.clientY);
     this.game.tapWorld(w.x, w.y);
+  }
+  onWheel(e) {
+    e.preventDefault();
+    // колесо мыши и щипок на тачпаде (ctrlKey) — масштаб
+    this.wheelAcc += e.deltaY * (e.ctrlKey ? 3 : 1);
+    if (this.wheelAcc > 60) { this.zoom(-1); this.wheelAcc = 0; }
+    else if (this.wheelAcc < -60) { this.zoom(1); this.wheelAcc = 0; }
   }
 
   onKey(e, isDown) {
@@ -60,6 +99,8 @@ export class Input {
       if (code === 'KeyB') { g.ui.close(); g.toggleBuild(); return; }
       if (code === 'Escape') { if (g.ui.panel) g.ui.close(); else if (g.build) g.toggleBuild(); return; }
       if (code === 'KeyM') { g.sound.setMusic(!g.sound.musicOn); return; }
+      if (k === '+' || k === '=' || code === 'NumpadAdd') { this.zoom(1); return; }
+      if (k === '-' || k === '_' || code === 'NumpadSubtract') { this.zoom(-1); return; }
     }
     const dirKey = { KeyW: 'u', ArrowUp: 'u', KeyS: 'd', ArrowDown: 'd', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r' }[code];
     if (dirKey) {

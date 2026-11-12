@@ -75,6 +75,8 @@ const DRAW = {
   water: g => { for (let y = 0; y < 10; y++) { const w = Math.round(Math.sin(y / 10 * Math.PI) * 4 + (y > 4 ? 1 : 0)); R(g, 8 - w, 3 + y, w * 2, 1, '#5aa0d0'); } P(g, 6, 9, '#b0e0f8'); },
   hand: g => { R(g, 5, 6, 7, 7, C.skin); for (let i = 0; i < 4; i++) R(g, 5 + i * 2, 2 + (i === 0 ? 2 : 0), 1, 5, C.skin); R(g, 11, 5, 2, 3, C.skin); R(g, 5, 12, 7, 1, C.skinD); },
   cat: g => { g.drawImage(spriteCatIcon(), 0, 2); },
+  zoom_in: g => { ellipse(g, 6.5, 6.5, 5.5, 5.5, C.ink); ellipse(g, 6.5, 6.5, 4, 4, '#dff0f4'); line(g, 10, 10, 14, 14, C.ink, 2); R(g, 4, 6, 6, 1, C.ink); R(g, 6, 4, 1, 6, C.ink); },
+  zoom_out: g => { ellipse(g, 6.5, 6.5, 5.5, 5.5, C.ink); ellipse(g, 6.5, 6.5, 4, 4, '#dff0f4'); line(g, 10, 10, 14, 14, C.ink, 2); R(g, 4, 6, 6, 1, C.ink); },
 };
 
 let catIconSrc = null;

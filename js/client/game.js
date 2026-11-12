@@ -41,7 +41,9 @@ export class Game {
     this.highlight = null;
     this.shake = null;
     this.snapCam();
-    window.addEventListener('resize', () => { this.renderer.resize(); this.snapCam(); });
+    const onResize = () => { this.renderer.resize(); this.snapCam(); };
+    window.addEventListener('resize', onResize);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.save(); });
     window.addEventListener('pagehide', () => this.save());
     this.last = performance.now();

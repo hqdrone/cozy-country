@@ -42,15 +42,22 @@ export class Renderer {
     this.ground = new Map();
     this.zoomOut = false;
     this.scale = 3;
+    try { this.zoom = JSON.parse(localStorage.getItem('hutor-zoom')) || null; } catch (e) { this.zoom = null; }
+    if (!this.zoom || !this.zoom.walk) this.zoom = { walk: 1, build: 0.55 };
     this.cam = { x: 0, y: 0 };
     this.view = { x: 0, y: 0, w: 0, h: 0 };
     this.smokeT = 0;
     this.resize();
   }
 
+  // Размер экрана. Холст подгоняем под реально видимую область (на телефоне 100vh
+  // выше экрана из-за адресной строки — из-за этого раньше были промахи по клеткам).
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const W = Math.floor(window.innerWidth * dpr), H = Math.floor(window.innerHeight * dpr);
+    const vv = window.visualViewport;
+    const cssW = Math.round(vv ? vv.width : window.innerWidth), cssH = Math.round(vv ? vv.height : window.innerHeight);
+    this.cv.style.width = cssW + 'px'; this.cv.style.height = cssH + 'px';
+    const W = Math.round(cssW * dpr), H = Math.round(cssH * dpr);
     this.cv.width = W; this.cv.height = H;
     this.dpr = dpr;
     const minSide = Math.min(W, H);
@@ -58,14 +65,30 @@ export class Renderer {
     const tiles = minSide > 900 * dpr * 0.9 && Math.max(W, H) > 1200 ? 14 : 11;
     const base = Math.max(2, Math.round(minSide / (16 * tiles)));
     this.baseScale = base;
-    this.scale = this.zoomOut ? Math.max(1, Math.round(base * 0.55)) : base;
+    this.minScale = Math.max(1, Math.round(base * 0.35));
+    this.maxScale = base * 2;
+    this.applyScale();
+  }
+  applyScale() {
+    const f = this.zoom[this.zoomOut ? 'build' : 'walk'];
+    this.scale = Math.max(this.minScale, Math.min(this.maxScale, Math.round(this.baseScale * f)));
+    const W = this.cv.width, H = this.cv.height;
     this.buf.width = Math.ceil(W / this.scale) + 1;
     this.buf.height = Math.ceil(H / this.scale) + 1;
     this.light.width = this.buf.width; this.light.height = this.buf.height;
     this.bg = ctx2d(this.buf);
     this.g.imageSmoothingEnabled = false;
   }
-  setZoomOut(z) { if (this.zoomOut !== z) { this.zoomOut = z; this.resize(); } }
+  setZoomOut(z) { if (this.zoomOut !== z) { this.zoomOut = z; this.applyScale(); } }
+  // Приблизить (+1) / отдалить (-1) на один шаг пиксельного масштаба
+  zoomStep(d) {
+    const s = Math.max(this.minScale, Math.min(this.maxScale, this.scale + d));
+    if (s === this.scale) return false;
+    this.zoom[this.zoomOut ? 'build' : 'walk'] = s / this.baseScale;
+    localStorage.setItem('hutor-zoom', JSON.stringify(this.zoom));
+    this.applyScale();
+    return true;
+  }
 
   groundFor(scene, seed) {
     let e = this.ground.get(scene.id);
@@ -87,9 +110,14 @@ export class Renderer {
     y = mh <= bh ? Math.round((mh - bh) / 2) : Math.max(0, Math.min(mh - bh, y));
     return { x, y };
   }
+  // Экранные координаты (clientX/Y) → мировые пиксели, с учётом реального размера холста
   screenToWorld(px, py) {
-    return { x: px * this.dpr / this.scale + this.view.x, y: py * this.dpr / this.scale + this.view.y };
+    const r = this.cv.getBoundingClientRect();
+    const kx = this.cv.width / (r.width || 1), ky = this.cv.height / (r.height || 1);
+    return { x: (px - r.left) * kx / this.scale + this.view.x, y: (py - r.top) * ky / this.scale + this.view.y };
   }
+  // Сколько мировых пикселей в одном CSS-пикселе (для перетаскивания)
+  worldPerCss() { const r = this.cv.getBoundingClientRect(); return this.cv.width / (r.width || 1) / this.scale; }
   worldToScreen(wx, wy) {
     return { x: (wx - this.view.x) * this.scale / this.dpr, y: (wy - this.view.y) * this.scale / this.dpr };
   }
