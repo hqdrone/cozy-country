@@ -2,8 +2,10 @@
 import { ITEMS, itemName } from '../config/items.js';
 import { RECIPES, TOOLS } from '../config/recipes.js';
 import { BUILDABLE } from '../config/objects.js';
-import { TUTORIAL, SHOP, STAGES, stageProgress } from '../config/story.js';
-import { recipeVisible, canAutoCraft, canCapacity, shopOpen } from '../core/actions.js';
+import { TUTORIAL, STAGES, stageProgress, canStageUp, goalValue } from '../config/story.js';
+import { OBJECTS as OBJ } from '../config/objects.js';
+import { VILLAGERS } from '../config/villagers.js';
+import { recipeVisible, canAutoCraft, canCapacity, shopOpen, shopStock, canPay } from '../core/actions.js';
 import { hasItems } from '../core/world.js';
 import { clockText } from '../core/sim.js';
 import { iconURL, imgHTML } from '../render/icons.js';
@@ -62,6 +64,7 @@ export class UI {
     const prog = stageProgress(s);
     $('stage-bar').style.width = Math.round(prog * 100) + '%';
     $('stage-name').textContent = STAGES[s.stage || 0].name;
+    $('btn-stage').classList.toggle('pulse', canStageUp(s) && this.panel !== 'stage');
     // подсказка обучения
     this.updateHint();
     if (this.panel === 'bag' || this.panel === 'container' || this.panel === 'shop' || this.panel === 'stove') {
@@ -89,7 +92,8 @@ export class UI {
   }
 
   // Реплики бабушки: показываем по очереди
-  say(lines) {
+  say(lines, who = 'granny') {
+    this.who = who;
     this.dialog = lines.slice();
     this.showLine();
   }
@@ -100,7 +104,8 @@ export class UI {
     let extra = '';
     if (l.need) extra = Object.entries(l.need).map(([id, n]) => `<span class="need ${(this.p.inv[id] || 0) >= n ? 'ok' : ''}">${imgHTML(id)}<b>${Math.min(this.p.inv[id] || 0, n)}/${n}</b></span>`).join('');
     else if (l.icon) extra = imgHTML(l.icon);
-    h.innerHTML = `${imgHTML('granny', 'face')}<span>${l.text}</span>${extra}`;
+    const face = this.who && this.who !== 'granny' ? 'npc_' + this.who : 'granny';
+    h.innerHTML = `${imgHTML(face, 'face')}<span>${l.text}</span>${extra}`;
     h.dataset.html = '';
     h.classList.remove('hidden'); h.classList.remove('pop'); void h.offsetWidth; h.classList.add('pop');
     this.dialogT = l.need ? 5 : 3;
@@ -122,6 +127,7 @@ export class UI {
     let html = `<div class="big">${imgHTML('sun')} День ${f.day}</div>`;
     if (f.coins) html += `<div>${Object.entries(f.sold).map(([id, n]) => imgHTML(id) + '<b>' + n + '</b>').join(' ')}</div><div class="big">+${f.coins} ${imgHTML('coin')}</div>`;
     if (f.shop) html += `<div>${imgHTML('van')} Сегодня приедет автолавка!</div>`;
+    for (const who of f.arrived || []) html += `<div>${imgHTML('npc_' + who)} Приехал(а) ${VILLAGERS[who].name}!</div>`;
     this.toast(html, 4);
   }
 
@@ -157,7 +163,7 @@ export class UI {
     const items = this.sortedInv();
     const grid = items.length ? items.map(([id, n]) => `<button class="cell ${p.seed === id ? 'sel' : ''}" data-item="${id}">${imgHTML(id)}<b>${n}</b></button>`).join('')
       : `<div class="empty">${imgHTML('backpack')}</div>`;
-    const recs = RECIPES.filter(r => !r.where && recipeVisible(s, p, r));
+    const recs = RECIPES.filter(r => !r.where && recipeVisible(s, p, r) && !(r.out && OBJ[ITEMS[Object.keys(r.out)[0]]?.place]?.big));
     $('panel').innerHTML = this.head('backpack', 'Рюкзак') +
       `<div class="tools">${tools}</div><div class="iname" id="iname">&nbsp;</div><div class="grid">${grid}</div>` +
       (recs.length ? `<h3>${imgHTML('build')} Сделать</h3><div class="recipes">${recs.map(r => this.recipeCard(r)).join('')}</div>` : '');
@@ -168,11 +174,12 @@ export class UI {
   }
   recipeCard(r) {
     const p = this.p;
-    const ok = hasItems(p, r.in);
+    const ok = canPay(p, r);
     const outId = r.tool ? r.tool[0] : Object.keys(r.out)[0];
     const outN = r.out ? r.out[outId] : 0;
     const name = r.tool ? (r.tool[1] > 1 ? 'Каменн. ' : '') + TOOLS[r.tool[0]].name.toLowerCase() : itemName(outId);
-    const ins = Object.entries(r.in).map(([id, n]) => `<span class="${(p.inv[id] || 0) >= n ? 'have' : 'miss'}">${imgHTML(id)}<b>${n}</b></span>`).join('');
+    const ins = Object.entries(r.in).map(([id, n]) => `<span class="${(p.inv[id] || 0) >= n ? 'have' : 'miss'}">${imgHTML(id)}<b>${n}</b></span>`).join('')
+      + (r.coins ? `<span class="${p.coins >= r.coins ? 'have' : 'miss'}">${imgHTML('coin')}<b>${r.coins}</b></span>` : '');
     return `<button class="rc ${ok ? 'ok' : 'no'}" data-recipe="${r.id}">
       <div class="out">${imgHTML(outId, 'ico big')}${r.tool ? '<i class="up">▲</i>' : ''}${outN > 1 ? `<i>×${outN}</i>` : ''}</div>
       <div class="nm">${name}</div><div class="ins">${ins}</div>${ok ? '<span class="do">Сделать</span>' : ''}</button>`;
@@ -195,7 +202,7 @@ export class UI {
     let sum = 0;
     for (const [id, n] of inside) sum += (ITEMS[id]?.price || 1) * n;
     const cell = (id, n, dir) => `<div class="cellw"><button class="cell" data-move="${dir}" data-item="${id}">${imgHTML(id)}<b>${n}</b></button>${n > 1 ? `<button class="all" data-move="${dir}" data-all="1" data-item="${id}">все</button>` : ''}</div>`;
-    const inv = this.sortedInv().filter(([id]) => !isBox || ITEMS[id]?.cat !== 'seed');
+    const inv = this.sortedInv().filter(([id]) => !isBox || (ITEMS[id]?.cat !== 'seed' && ITEMS[id]?.price > 0));
     $('panel').innerHTML = this.head(isBox ? 'sellbox' : 'chest', isBox ? 'Ящик' : 'Сундук', isBox && sum ? `<span class="sum">+${sum} ${imgHTML('coin')}</span>` : '') +
       (isBox ? `<div class="note">${imgHTML('moon')} → ${imgHTML('coin')}</div>` : '') +
       `<div class="grid box">${inside.length ? inside.map(([id, n]) => cell(id, n, 'out')).join('') : `<div class="empty">${imgHTML(isBox ? 'sellbox' : 'chest')}</div>`}</div>` +
@@ -203,16 +210,16 @@ export class UI {
   }
 
   // Автолавка
-  openShop() { if (!shopOpen(this.s)) return; this.open('shop'); }
+  openShop(which = 'van') { if (!shopOpen(this.s, which)) return; this.shopWhich = which; this.open('shop'); }
   render_shop() {
-    const p = this.p;
-    const cards = SHOP.stock.map((e, i) => {
+    const p = this.p, which = this.shopWhich || 'van';
+    const cards = shopStock(which).map((e, i) => {
       if (e.tool && (p.tools[e.tool[0]] || 0) >= e.tool[1]) return '';
       const id = e.item || e.tool[0];
       const ok = p.coins >= e.price;
       return `<button class="rc ${ok ? 'ok' : 'no'}" data-buy="${i}"><div class="out">${imgHTML(id, 'ico big')}${e.tool ? '<i class="up">▲</i>' : ''}</div><div class="nm">${e.name || itemName(id)}</div><div class="price">${e.price} ${imgHTML('coin')}</div></button>`;
     }).join('');
-    $('panel').innerHTML = this.head('van', 'Автолавка', `<span class="sum">${p.coins} ${imgHTML('coin')}</span>`) + `<div class="recipes shop">${cards}</div>`;
+    $('panel').innerHTML = this.head(which === 'selpo' ? 'selpo' : 'van', which === 'selpo' ? 'Сельпо' : 'Автолавка', `<span class="sum">${p.coins} ${imgHTML('coin')}</span>`) + `<div class="recipes shop">${cards}</div>`;
   }
 
   openSleep() { this.open('sleep', 'small'); }
@@ -230,12 +237,17 @@ export class UI {
   render_stage() {
     const s = this.s, st = STAGES[s.stage || 0], nx = STAGES[(s.stage || 0) + 1];
     const goals = st.goals.map(g => {
-      const v = Math.min(g.n, s.stats[g.stat] || 0);
+      const v = Math.min(g.n, goalValue(s, g));
       return `<div class="goal">${imgHTML(g.icon)}<div class="bar"><i style="width:${v / g.n * 100}%"></i></div><b>${v}/${g.n}</b></div>`;
     }).join('');
     const done = stageProgress(s) >= 1;
+    const up = canStageUp(s);
+    const vils = Object.entries(s.villagers || {}).filter(([, v]) => v.home)
+      .map(([id, v]) => `<div class="goal">${imgHTML('npc_' + id)}<span class="vn">${VILLAGERS[id].name}</span><b class="hearts">${'♥'.repeat(v.hearts || 0)}${'♡'.repeat(Math.max(0, 5 - (v.hearts || 0)))}</b></div>`).join('');
     $('panel').innerHTML = this.head('house', `${st.name} → ${nx ? nx.name : ''}`) + `<div class="goals">${goals}</div>` +
-      (done ? `<div class="note big">${imgHTML('heart')} Скоро здесь будет ${nx.name}!</div>` : '');
+      (up ? `<div class="center"><button class="txt go" data-stageup>${imgHTML('house')} Стать: ${nx.name}!</button></div>`
+        : done ? `<div class="note big">${imgHTML('heart')} Скоро здесь будет ${nx.name}!</div>` : '') +
+      (vils ? `<h3>${imgHTML('heart')} Жители</h3><div class="goals">${vils}</div>` : '');
   }
 
   openSettings() { this.open('settings', 'small'); }
@@ -285,11 +297,12 @@ export class UI {
       return;
     }
     if (d.buy) {
-      const r = g.dispatch({ type: 'buy', i: +d.buy });
+      const r = g.dispatch({ type: 'buy', i: +d.buy, shop: this.shopWhich || 'van' });
       g.sound.play(r.ok ? 'coin' : 'no');
       return;
     }
     if ('sleep' in d) { this.close(); g.sleep(); return; }
+    if ('stageup' in d) { this.close(); g.dispatch({ type: 'advanceStage' }); return; }
     if (d.seed) { g.dispatch({ type: 'selectSeed', seed: d.seed }); const cb = this.seedCb; this.close(); cb && cb(d.seed); return; }
     if (d.tog) {
       if (d.tog === 'music') g.sound.setMusic(!g.sound.musicOn); else g.sound.setSfx(!g.sound.sfxOn);
@@ -329,13 +342,20 @@ export class UI {
   renderBuildbar() {
     const p = this.p, s = this.s, b = this.game.build;
     const items = BUILDABLE.filter(id => (p.inv[id] || 0) > 0 || RECIPES.some(r => r.out && r.out[id] && !r.where && recipeVisible(s, p, r)));
-    const key = items.map(id => id + (p.inv[id] || 0) + (canAutoCraft(s, p, id) ? 'c' : '')).join() + b.item;
+    const key = items.map(id => id + (p.inv[id] || 0) + (canAutoCraft(s, p, id) ? 'c' : '')).join() + b.item + p.coins + JSON.stringify(p.inv);
     if (key === this._bbKey) return;
     this._bbKey = key;
-    $('buildbar').innerHTML = `<div class="strip">${items.map(id => {
+    const cost = id => {
+      const r = RECIPES.find(r => r.out && r.out[id] && !r.where);
+      if (!r) return '';
+      return Object.entries(r.in).map(([i, k]) => `<span class="${(p.inv[i] || 0) >= k ? '' : 'miss'}">${imgHTML(i)}${k}</span>`).join('')
+        + (r.coins ? `<span class="${p.coins >= r.coins ? '' : 'miss'}">${imgHTML('coin')}${r.coins}</span>` : '');
+    };
+    const sel = b.item;
+    const info = sel ? `<div class="binfo"><b>${itemName(sel)}</b>${p.inv[sel] ? ` <span>×${p.inv[sel]}</span>` : cost(sel)}</div>` : '';
+    $('buildbar').innerHTML = info + `<div class="strip">${items.map(id => {
       const n = p.inv[id] || 0, c = !n && canAutoCraft(s, p, id);
-      const r = !n && !c ? RECIPES.find(r => r.out && r.out[id]) : null;
-      return `<button class="bcell ${b.item === id ? 'sel' : ''} ${n || c ? '' : 'no'}" data-b="${id}">${imgHTML(id)}${n ? `<b>${n}</b>` : c ? '<b class="c">+</b>' : ''}${r ? `<span class="need">${Object.entries(r.in).map(([i, k]) => imgHTML(i) + k).join('')}</span>` : ''}</button>`;
+      return `<button class="bcell ${b.item === id ? 'sel' : ''} ${n || c ? '' : 'no'}" data-b="${id}">${imgHTML(id)}${n ? `<b>${n}</b>` : c ? '<b class="c">+</b>' : ''}</button>`;
     }).join('')}</div><button class="done" data-done>${imgHTML('check')}</button>`;
   }
   onBuildClick(e) {

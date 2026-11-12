@@ -14,6 +14,12 @@ export const RECIPES = [
   { id: 'flowerbed', out: { flowerbed: 1 }, in: { stone: 3 } },
   { id: 'lantern',   out: { lantern: 1 },   in: { wood: 2, stone: 3 } },
 
+  // Деревня (открываются при переходе в Деревню). coins — сколько монеток нужно.
+  { id: 'cottage', out: { cottage: 1 }, in: { wood: 20, stone: 8 }, coins: 80 },
+  { id: 'selpo',   out: { selpo: 1 },   in: { wood: 25, stone: 15 }, coins: 150 },
+  { id: 'banya',   out: { banya: 1 },   in: { wood: 25, stone: 10 }, coins: 120 },
+  { id: 'club',    out: { club: 1 },    in: { wood: 35, stone: 20 }, coins: 250 },
+
   { id: 'jam_currant',   where: 'stove', out: { jam_currant: 1 },   in: { currant: 5, jar: 1 } },
   { id: 'jam_raspberry', where: 'stove', out: { jam_raspberry: 1 }, in: { raspberry: 5, jar: 1 } },
   { id: 'pickles',       where: 'stove', out: { pickles: 1 },       in: { cucumber: 3, jar: 1 } },

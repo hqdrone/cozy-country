@@ -29,6 +29,12 @@ export const OBJECTS = {
   haystack:     { solid: true, w: 2, h: 2 },
   van:          { solid: true, w: 3, h: 2, kind: 'shop' },
 
+  // Деревня. door — клетка перед дверью относительно левого верхнего угла.
+  cottage: { solid: true, w: 4, h: 3, kind: 'cottage', item: 'cottage', door: [1, 3], light: 2, big: true },
+  selpo:   { solid: true, w: 4, h: 3, kind: 'selpo', item: 'selpo', door: [2, 3], light: 2, big: true },
+  banya:   { solid: true, w: 3, h: 3, kind: 'banya', item: 'banya', door: [1, 3], light: 1.5, big: true },
+  club:    { solid: true, w: 5, h: 3, kind: 'club', item: 'club', door: [2, 3], light: 3, big: true },
+
   // Внутри дома
   stove:     { solid: true, w: 3, h: 3, kind: 'stove', light: 3 },
   bed:       { solid: true, w: 3, h: 2, kind: 'bed' },
@@ -40,4 +46,4 @@ export const OBJECTS = {
 };
 
 // Что можно ставить в режиме стройки (порядок в ленте)
-export const BUILDABLE = ['fence', 'gate', 'path', 'gardenbed', 'flowerbed', 'bench', 'lantern', 'chest', 'birdhouse', 'scarecrow', 'geranium'];
+export const BUILDABLE = ['cottage', 'selpo', 'banya', 'club', 'fence', 'gate', 'path', 'gardenbed', 'flowerbed', 'bench', 'lantern', 'chest', 'birdhouse', 'scarecrow', 'geranium'];

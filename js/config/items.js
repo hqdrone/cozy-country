@@ -38,6 +38,12 @@ export const ITEMS = {
   birdhouse:  { name: 'Скворечник', cat: 'place', place: 'birdhouse', price: 10 },
   scarecrow:  { name: 'Пугало', cat: 'place', place: 'scarecrow', price: 10 },
   geranium:   { name: 'Герань', cat: 'place', place: 'geranium', price: 8 },
+
+  // Постройки деревни
+  cottage:    { name: 'Изба для жителя', cat: 'place', place: 'cottage', price: 0 },
+  selpo:      { name: 'Сельпо', cat: 'place', place: 'selpo', price: 0 },
+  banya:      { name: 'Баня', cat: 'place', place: 'banya', price: 0 },
+  club:       { name: 'Клуб', cat: 'place', place: 'club', price: 0 },
 };
 
 export const itemName = id => (ITEMS[id] ? ITEMS[id].name : id);

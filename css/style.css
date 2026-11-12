@@ -150,4 +150,13 @@ textarea#savecode { width: 100%; height: 6em; font-family: monospace; font-size:
 
 /* Кнопки масштаба */
 #zoom { position: absolute; left: 12px; bottom: calc(14px + var(--safe-b)); display: flex; flex-direction: column; gap: 10px; }
-body.building #zoom { bottom: calc(var(--u) * .95 + 2.2em + var(--safe-b)); }
+body.building #zoom { bottom: calc(var(--u) * .95 + 3.8em + var(--safe-b)); }
+.txt.go { background: #d8f0c0; border-color: #6aa84a; font-size: 1.1em; padding: .6em 1.2em; animation: pulse 1.2s ease-in-out infinite; }
+.goal .vn { flex: 1; }
+.goal .hearts { color: #e05a6a; letter-spacing: .05em; min-width: 0; }
+.bcell .need { flex-wrap: wrap; line-height: 1; }
+#buildbar { flex-wrap: wrap; }
+.binfo { flex-basis: 100%; display: flex; align-items: center; gap: .5em; flex-wrap: wrap; font-size: .9em; padding: 0 .2em; }
+.binfo span { display: inline-flex; align-items: center; gap: .1em; }
+.binfo span.miss { color: #b04030; }
+.binfo img.ico { width: 1.3em; height: 1.3em; }

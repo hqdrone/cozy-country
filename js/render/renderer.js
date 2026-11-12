@@ -8,6 +8,7 @@ import { drawGroundTile, treeSprite, stumpSprite, rockSprite, bushSprite, soilSp
 import { kidSprite, grannySprite, catSprite } from './sprites_chars.js';
 import * as B from './sprites_build.js';
 import { icon } from './icons.js';
+import { cottageSprite, selpoSprite, banyaSprite, clubSprite, villagerSprite } from './sprites_village.js';
 
 // Освещение по времени суток: [час, темнота], [час, цвет оттенка, сила]
 const DARK = [[0, 0.62], [4.5, 0.6], [5.5, 0.45], [6.5, 0.15], [7.5, 0], [18.5, 0], [19.5, 0.1], [20.5, 0.3], [21.5, 0.5], [22.5, 0.6], [26.5, 0.62]];
@@ -168,6 +169,7 @@ export class Renderer {
         list.push({ y: (o.y + h) * 16 - 0.1, f: () => this.drawObj(g, o, o.x * 16 - ox, o.y * 16 - oy, v, sky, t) });
       }
     }
+    v.kid = v.ents.find(e => e.kind === 'kid');
     for (const e of v.ents) list.push({ y: e.y + 16, f: () => this.drawEnt(g, e, ox, oy, t) });
     list.sort((a, b) => a.y - b.y);
 
@@ -186,6 +188,8 @@ export class Renderer {
       for (const k in scene.objects) {
         const o = scene.objects[k];
         if (o.type === 'house' || o.type === 'granny_house') this.fx.smoke(o.x * 16 + 60, o.y * 16 - 36);
+        else if (o.type === 'cottage' && o.who) this.fx.smoke(o.x * 16 + 49, o.y * 16 - 32);
+        else if (o.type === 'banya' && (state.banyaDay === state.day || state.day % 7 === 6)) { this.fx.smoke(o.x * 16 + 36, o.y * 16 - 24); this.fx.smoke(o.x * 16 + 35, o.y * 16 - 22); }
       }
     }
 
@@ -280,6 +284,18 @@ export class Renderer {
 
   drawObj(g, o, sx, sy, v, sky, t) {
     const scene = v.scene;
+    // герой за крышей большого дома — делаем дом полупрозрачным
+    const d0 = OBJECTS[o.type];
+    if (d0 && (d0.big || d0.w >= 5) && v.kid) {
+      const kx = v.kid.x + 8, ky = v.kid.y + 12, top = o.y * 16 - 40;
+      if (kx > o.x * 16 && kx < (o.x + d0.w) * 16 && ky > top && ky < o.y * 16 + 8) {
+        g.globalAlpha = 0.5; this.drawObjInner(g, o, sx, sy, v, sky, t); g.globalAlpha = 1; return;
+      }
+    }
+    this.drawObjInner(g, o, sx, sy, v, sky, t);
+  }
+  drawObjInner(g, o, sx, sy, v, sky, t) {
+    const scene = v.scene;
     switch (o.type) {
       case 'birch': case 'spruce': {
         const s = treeSprite(o.type, o.v || 0);
@@ -328,6 +344,10 @@ export class Renderer {
       case 'geranium': g.drawImage(B.geraniumSprite(), sx, sy); break;
       case 'haystack': g.drawImage(B.haystackSprite(), sx, sy - 8); break;
       case 'van': g.drawImage(B.vanSprite(), sx, sy - 8); break;
+      case 'cottage': g.drawImage(cottageSprite(o.who || 'none', sky.dark > 0.2 && !!o.who), sx, sy - 32); break;
+      case 'selpo': g.drawImage(selpoSprite(sky.dark > 0.2), sx, sy - 30); break;
+      case 'banya': g.drawImage(banyaSprite(sky.dark > 0.2 || v.state.banyaDay === v.state.day), sx, sy - 24); break;
+      case 'club': g.drawImage(clubSprite(sky.dark > 0.2, !!v.party && Math.floor(t * 2) % 2 === 0), sx, sy - 40); break;
       case 'stove': {
         g.drawImage(B.stoveSprite(), sx, sy - 16);
         // огонь в печи
@@ -365,8 +385,8 @@ export class Renderer {
       return;
     }
     ellipse(g, x + 8, y + 15, 5, 1.8, 'rgba(0,0,0,0.2)');
-    const spr = e.kind === 'granny' ? grannySprite(e.dir, e.frame) : kidSprite(e.dir, e.frame, e.pose, e.look);
-    const by = y - 4 + (e.bob || 0);
+    const spr = e.kind === 'granny' ? grannySprite(e.dir, e.frame) : e.kind === 'villager' ? villagerSprite(e.id, e.dir, e.frame) : kidSprite(e.dir, e.frame, e.pose, e.look);
+    const by = y - 4 + Math.round(e.bob || 0);
     if (e.tool && e.pose === 'work') {
       const behind = e.dir === 'up';
       if (behind) this.drawTool(g, e, x, by);
@@ -451,13 +471,14 @@ export class Renderer {
     for (let y = y0; y <= y1 + 1; y++) g.fillRect(0, y * 16 - oy, this.buf.width, 1);
     if (b.hover) {
       const { x, y, ok, remove } = b.hover;
+      const W = (b.hover.w || 1) * 16, Hh = (b.hover.h || 1) * 16;
       const sx = x * 16 - ox, sy = y * 16 - oy;
-      if (b.item && ok && !remove) { g.globalAlpha = 0.6; g.drawImage(icon(b.item), sx, sy); g.globalAlpha = 1; }
+      if (b.item && ok && !remove) { g.globalAlpha = 0.6; g.drawImage(icon(b.item), sx + W / 2 - 8, sy + Hh / 2 - 8); g.globalAlpha = 1; }
       const col = remove ? '255,190,90' : ok ? '140,230,120' : '240,100,90';
       g.fillStyle = `rgba(${col},${0.35 + Math.sin(t * 6) * 0.1})`;
-      g.fillRect(sx, sy, 16, 16);
+      g.fillRect(sx, sy, W, Hh);
       g.fillStyle = `rgb(${col})`;
-      g.fillRect(sx, sy, 16, 1); g.fillRect(sx, sy + 15, 16, 1); g.fillRect(sx, sy, 1, 16); g.fillRect(sx + 15, sy, 1, 16);
+      g.fillRect(sx, sy, W, 1); g.fillRect(sx, sy + Hh - 1, W, 1); g.fillRect(sx, sy, 1, Hh); g.fillRect(sx + W - 1, sy, 1, Hh);
     }
   }
 
@@ -487,6 +508,7 @@ export class Renderer {
       if (o.type === 'house' || o.type === 'granny_house') {
         lights.push([o.x * 16 + 18, o.y * 16 + 40, 26], [o.x * 16 + 62, o.y * 16 + 40, 26]);
       } else if (o.type === 'stove') lights.push([o.x * 16 + 22, o.y * 16 + 26, 70 * flick]);
+      else if (d.big) { if (o.type !== 'cottage' || o.who) lights.push([o.x * 16 + d.w * 8, o.y * 16 + d.h * 16 - 14, d.light * 16 * flick]); }
       else lights.push([o.x * 16 + 8, o.y * 16 - 6, d.light * 16 * flick]);
     }
     if (indoor) lights.push([5 * 16 + 16, 40, 30]);

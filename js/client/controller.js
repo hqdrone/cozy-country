@@ -5,7 +5,7 @@ import { ITEMS } from '../config/items.js';
 import { CROPS } from '../config/crops.js';
 import { objAt, ground, walkable, defOf, findObj, doorTile } from '../core/world.js';
 import { findPath, pathNear } from '../core/pathfind.js';
-import { canCapacity } from '../core/actions.js';
+import { canCapacity, shopOpen } from '../core/actions.js';
 
 const SPEED = 64;          // пикселей в секунду (4 клетки)
 const dirOf = (dx, dy) => (Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down'));
@@ -91,6 +91,18 @@ export class Controller {
         case 'chest': return this.goAdj(o, [{ t: 'do', fn: () => g.ui.openContainer(o) }]);
         case 'shop': return this.goAdj(o, [{ t: 'do', fn: () => g.ui.openShop() }]);
         case 'gate': return this.walkTo(tx, ty);
+        case 'cottage': {
+          const n = o.who && g.vils[o.who];
+          if (n && n.visible) return this.tapEntity({ kind: 'villager', id: o.who, x: n.x, y: n.y });
+          return this.goAdj(o, [{ t: 'bubble', id: o.who ? 'npc_' + o.who : 'question' }]);
+        }
+        case 'selpo':
+          if (!shopOpen(g.state, 'selpo')) return this.goAdj(o, [{ t: 'bubble', id: 'clock' }]);
+          return this.goAdj(o, [{ t: 'do', fn: () => g.ui.openShop('selpo') }]);
+        case 'banya': return this.goAdj(o, [{ t: 'do', fn: () => g.dispatch({ type: 'banya', x: o.x, y: o.y }) }]);
+        case 'club':
+          if (!g.party) return this.goAdj(o, [{ t: 'bubble', id: 'clock' }]);
+          return this.goAdj(o, [{ t: 'do', fn: () => { g.fx.notes(this.vis.x + 8, this.vis.y - 4); g.fx.notes(o.x * 16 + 40, o.y * 16); g.sound.play('craft'); } }]);
       }
       if (!d.solid) return this.walkTo(tx, ty);
       return this.goAdj(o, []);
@@ -155,6 +167,10 @@ export class Controller {
     if (e.kind === 'granny') {
       g.granny.hold = 8;
       return this.goAdjTile(tx, ty, [{ t: 'faceEnt', ent: e }, { t: 'do', fn: () => g.dispatch({ type: 'talk', npc: 'granny' }) }]);
+    }
+    if (e.kind === 'villager') {
+      const n = g.vils[e.id]; if (n) n.hold = 8;
+      return this.goAdjTile(tx, ty, [{ t: 'faceEnt', ent: e }, { t: 'do', fn: () => g.dispatch({ type: 'talkVillager', npc: e.id }) }]);
     }
     if (e.kind === 'cat') {
       g.cat.hold = 4;

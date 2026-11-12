@@ -117,6 +117,7 @@ export class Sound {
       case 'quest': [659, 784, 988, 1318].forEach((f, i) => this.osc('triangle', f, t + i * 0.1, 0.2, 0.15)); break;
       case 'rooster': this.rooster(t); break;
       case 'tea': this.nz(t, 0.8, 0.12, 'bandpass', 3000, 3, null, 1500); break;
+      case 'fanfare': [[523, 0], [659, 0.15], [784, 0.3], [1046, 0.45], [784, 0.7], [1046, 0.85]].forEach(([f, d]) => { this.osc('square', f, t + d, 0.22, 0.06); this.osc('triangle', f / 2, t + d, 0.25, 0.12); }); break;
     }
   }
 
@@ -183,6 +184,7 @@ export class Sound {
 
   // ---------- музыка ----------
   setMood(night) { this.night = night; }
+  setParty(on) { this.party = on; }
   schedule() {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
@@ -190,8 +192,8 @@ export class Sound {
     while (this.nextBar < now + 0.5) { this.playBar(this.nextBar); }
   }
   playBar(t) {
-    const night = this.night;
-    const beat = night ? 0.78 : 0.6;
+    const party = this.party, night = this.night && !party;
+    const beat = party ? 0.4 : night ? 0.78 : 0.6;
     if (this.bar % 16 === 0) this.prog = PROGS[(Math.random() * PROGS.length) | 0];
     const chordName = this.prog[(this.bar >> 2) % 4];
     const ch = CHORDS[chordName];

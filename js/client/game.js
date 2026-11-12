@@ -6,6 +6,7 @@ import { saveLocal, loadLocal } from '../core/save.js';
 import { MIN_PER_SEC, objAt, defOf, walkable, findObj, ground } from '../core/world.js';
 import { findPath } from '../core/pathfind.js';
 import { OBJECTS } from '../config/objects.js';
+import { ITEMS } from '../config/items.js';
 import { TUTORIAL } from '../config/story.js';
 import { Renderer, skyAt } from '../render/renderer.js';
 import { Effects } from '../render/effects.js';
@@ -17,6 +18,8 @@ import { UI } from './ui.js';
 import { Sound } from './audio.js';
 import { Input } from './input.js';
 import { HOME_ENTRY } from '../core/mapgen.js';
+import { villagerHome } from '../core/actions.js';
+import { VILLAGERS } from '../config/villagers.js';
 
 const GRANNY_SPOTS = [[37, 28], [39, 27], [41, 27], [39, 33], [36, 30], [34, 29], [38, 33], [33, 31]];
 
@@ -54,6 +57,7 @@ export class Game {
 
   initNPC() {
     this.granny = { x: 37 * 16, y: 28 * 16, path: [], wait: 1, hold: 0, dir: 'down', anim: 0 };
+    this.vils = {};
     const p = this.p;
     this.cat = { x: (p.x + 1) * 16, y: p.y * 16, scene: p.scene, path: [], pose: 'sit', flip: false, hold: 0, repath: 0, anim: 0, mode: 'follow', away: 0 };
   }
@@ -88,7 +92,11 @@ export class Game {
         case 'buy': refresh = true; break;
         case 'coins': fx.text(this.ctrl.vis.x + 8, this.ctrl.vis.y - 4, '+' + f.n, 'coin'); snd.play('coin'); refresh = true; break;
         case 'recipe': ui.toast(`Новый рецепт! ${this.recipeIcon(f.id)}`); break;
-        case 'say': ui.say(f.lines); break;
+        case 'say': ui.say(f.lines, f.who); break;
+        case 'friend': { const n = this.vils[f.who]; if (n) fx.hearts(n.x + 8, n.y); snd.play('quest'); refresh = true; break; }
+        case 'stageUp': this.celebrate(f.name); refresh = true; break;
+        case 'moveOut': ui.toast(`${imgHTML('npc_' + f.who)} ждёт новую избу`); delete this.vils[f.who]; break;
+        case 'banya': for (let i = 0; i < 14; i++) setTimeout(() => this.fx.smoke(f.x * 16 + 8 + Math.random() * 32, f.y * 16 + 20 + Math.random() * 20), i * 60); snd.play('tea'); fx.hearts(this.ctrl.vis.x + 8, this.ctrl.vis.y); break;
         case 'hearts': fx.hearts(f.x, f.y); break;
         case 'scene': this.onScene(); snd.play('door'); break;
         case 'morning': this.ctrl.syncVis(); this.initNPC(); this.snapCam(); ui.morning(f); snd.play('morning'); this.save(); refresh = true; break;
@@ -125,6 +133,57 @@ export class Game {
     const fx = st.face ? st.face.x * 16 + 8 : 0, fy = st.face ? st.face.y * 16 + 8 : 0;
     if (st.tool === 'axe') this.fx.burst(fx, fy, ['#c08550', '#efe9da', '#d8b98a'], 4, { speed: 30 });
     if (st.tool === 'pickaxe') this.fx.burst(fx, fy, ['#c8c2b8', '#ffffff'], 4, { speed: 40 });
+  }
+
+  celebrate(name) {
+    const x = this.ctrl.vis.x + 8, y = this.ctrl.vis.y;
+    for (let i = 0; i < 5; i++) setTimeout(() => this.fx.confetti(x + (Math.random() - 0.5) * 80, y - 20 - Math.random() * 30), i * 250);
+    this.sound.play('fanfare');
+    this.ui.toast(`<div class="big">${imgHTML('house')} Теперь мы — ${name}!</div><div>${imgHTML('cottage')} Построй избу — приедут жители</div>`, 5);
+  }
+
+  // Жители: днём гуляют у своей избы, вечером — у клуба, ночью дома
+  updateVillagers(dt) {
+    const s = this.state, out = s.scenes.outside, h = s.time / 60;
+    const club = findObj(out, o => o.type === 'club');
+    this.party = !!club && h >= 19 && h < 23;
+    for (const id in VILLAGERS) {
+      const home = villagerHome(s, id);
+      if (!home) { delete this.vils[id]; continue; }
+      const door = { x: home.x + 1, y: home.y + 3 };
+      let n = this.vils[id];
+      if (!n) n = this.vils[id] = { id, x: door.x * 16, y: door.y * 16, path: [], wait: Math.random() * 3, hold: 0, dir: 'down', anim: 0 };
+      n.visible = h >= 7.5 && h < (this.party ? 23 : 21.5);
+      if (!n.visible) { n.x = door.x * 16; n.y = door.y * 16; n.path = []; continue; }
+      let spots;
+      if (this.party) spots = [[club.x + 1, club.y + 4], [club.x + 2, club.y + 4], [club.x + 3, club.y + 4], [club.x + 1, club.y + 5], [club.x + 3, club.y + 5], [club.x, club.y + 4], [club.x + 4, club.y + 4]];
+      else spots = [[door.x, door.y], [door.x - 1, door.y + 1], [door.x + 2, door.y + 1], [door.x + 1, door.y + 2], [door.x - 2, door.y], [door.x + 3, door.y]];
+      this.moveNpc(n, dt, spots, id === 'masha' ? 34 : 24);
+      n.dance = this.party && !n.moving;
+    }
+  }
+  moveNpc(n, dt, spots, speed) {
+    if (n.hold > 0) {
+      n.hold -= dt;
+      const dx = this.ctrl.vis.x - n.x, dy = this.ctrl.vis.y - n.y;
+      n.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+      n.moving = false; return;
+    }
+    if (n.path.length) {
+      const [nx, ny] = n.path[0];
+      const dx = nx * 16 - n.x, dy = ny * 16 - n.y, d = Math.hypot(dx, dy), st = speed * dt;
+      n.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
+      if (d <= st) { n.x = nx * 16; n.y = ny * 16; n.path.shift(); } else { n.x += dx / d * st; n.y += dy / d * st; }
+      n.moving = true; n.anim += dt; return;
+    }
+    n.moving = false;
+    n.wait -= dt;
+    if (n.wait <= 0) {
+      n.wait = 3 + Math.random() * 5;
+      const [tx, ty] = spots[(Math.random() * spots.length) | 0];
+      const path = findPath(this.state.scenes.outside, Math.round(n.x / 16), Math.round(n.y / 16), tx, ty);
+      if (path) n.path = path; else n.wait = 1;
+    }
   }
 
   toggleRadio() {
@@ -176,7 +235,8 @@ export class Game {
   buildHover(tx, ty) {
     if (!this.build) return;
     const rem = !!removeCheck(this.state, this.p, tx, ty);
-    this.build.hover = { x: tx, y: ty, remove: rem, ok: rem || (this.build.item && placeCheck(this.state, this.p, this.build.item, tx, ty)) };
+    const d = !rem && this.build.item ? OBJECTS[ITEMS[this.build.item]?.place] || {} : {};
+    this.build.hover = { x: tx, y: ty, w: d.w || 1, h: d.h || 1, remove: rem, ok: rem || (this.build.item && placeCheck(this.state, this.p, this.build.item, tx, ty)) };
   }
 
   // ---------- ввод ----------
@@ -204,7 +264,7 @@ export class Game {
       if (!objAt(sc, x, y) || !defOf(objAt(sc, x, y)).solid) {
         for (const dy of [1, 2]) {
           const o = objAt(sc, x, y + dy);
-          if (o && (o.type === 'birch' || o.type === 'spruce' || o.type === 'house' || o.type === 'granny_house' || o.type === 'well' || o.type === 'lantern' || o.type === 'stove' || o.type === 'sideboard')) {
+          if (o && (o.type === 'birch' || o.type === 'spruce' || o.type === 'house' || o.type === 'granny_house' || o.type === 'well' || o.type === 'lantern' || o.type === 'stove' || o.type === 'sideboard' || OBJECTS[o.type].big)) {
             if (!objAt(sc, x, y)) { y = y + dy; break; }
           }
         }
@@ -219,29 +279,7 @@ export class Game {
     const gr = this.granny, h = this.state.time / 60;
     gr.visible = h >= 7 && h < 21.5;
     if (!gr.visible) { gr.x = 37 * 16; gr.y = 27 * 16; gr.path = []; return; }
-    if (gr.hold > 0) {
-      gr.hold -= dt;
-      const dx = this.ctrl.vis.x - gr.x, dy = this.ctrl.vis.y - gr.y;
-      gr.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
-      gr.moving = false;
-      return;
-    }
-    if (gr.path.length) {
-      const [nx, ny] = gr.path[0];
-      const dx = nx * 16 - gr.x, dy = ny * 16 - gr.y, d = Math.hypot(dx, dy), st = 26 * dt;
-      gr.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'up' : 'down');
-      if (d <= st) { gr.x = nx * 16; gr.y = ny * 16; gr.path.shift(); } else { gr.x += dx / d * st; gr.y += dy / d * st; }
-      gr.moving = true; gr.anim += dt;
-      return;
-    }
-    gr.moving = false;
-    gr.wait -= dt;
-    if (gr.wait <= 0) {
-      gr.wait = 3 + Math.random() * 5;
-      const [tx, ty] = GRANNY_SPOTS[(Math.random() * GRANNY_SPOTS.length) | 0];
-      const path = findPath(this.state.scenes.outside, Math.round(gr.x / 16), Math.round(gr.y / 16), tx, ty);
-      if (path) gr.path = path;
-    }
+    this.moveNpc(gr, dt, GRANNY_SPOTS, 26);
   }
 
   updateCat(dt) {
@@ -306,6 +344,12 @@ export class Game {
     if (p.scene === 'outside' && this.granny.visible) {
       const g = this.granny;
       list.push({ kind: 'granny', x: g.x, y: g.y, dir: g.dir, frame: g.moving ? 1 + (Math.floor(g.anim * 5) % 2) : 0 });
+    }
+    if (p.scene === 'outside') for (const id in this.vils) {
+      const n = this.vils[id];
+      if (!n.visible) continue;
+      list.push({ kind: 'villager', id, x: n.x, y: n.y, dir: n.dance ? (Math.floor(this.t * 2 + id.length) % 2 ? 'left' : 'right') : n.dir,
+        frame: n.moving ? 1 + (Math.floor(n.anim * 5) % 2) : (n.dance ? 1 + (Math.floor(this.t * 4) % 2) : 0), bob: n.dance ? -Math.abs(Math.sin(this.t * 6)) * 2 : 0 });
     }
     if (this.cat.scene === p.scene) list.push({ kind: 'cat', x: this.cat.x, y: this.cat.y, pose: this.cat.pose, flip: this.cat.flip });
     return list;
@@ -372,6 +416,7 @@ export class Game {
       }
       this.ctrl.update(dt);
       this.updateGranny(dt);
+      this.updateVillagers(dt);
       this.updateCat(dt);
     }
     this.ui.tick(dt);
@@ -389,6 +434,8 @@ export class Game {
     const sky = skyAt(s.time);
     this.fx.updateCritters(dt, { cx: r.cam.x, cy: r.cam.y, w: r.buf.width, h: r.buf.height }, sky.dark > 0.35, !!sc.indoor);
     this.sound.setMood(sky.dark > 0.35);
+    const clubO = this.party && !sc.indoor ? findObj(sc, o => o.type === 'club') : null;
+    this.sound.setParty(!!clubO && Math.hypot(clubO.x + 2 - this.p.x, clubO.y + 2 - this.p.y) < 12);
     this.sound.ambient(dt, sky.hour, !!sc.indoor, s.day);
 
     this.hlT -= dt;
@@ -397,7 +444,7 @@ export class Game {
     r.render({
       state: s, scene: sc, ents: this.entities(), t: this.t, dt,
       highlight: this.build ? null : this.highlight,
-      build: this.build, shake: this.shake, radioOn: this.sound.musicOn,
+      build: this.build, shake: this.shake, radioOn: this.sound.musicOn, party: this.party,
     });
 
     this.saveT += dt;

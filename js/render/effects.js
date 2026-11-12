@@ -21,6 +21,14 @@ export class Effects {
     }
   }
   smoke(x, y) { this.add({ kind: 'smoke', x, y, vx: 4 + Math.random() * 3, vy: -9 - Math.random() * 4, life: 3.5, r: 1.5 }); }
+  confetti(x, y) {
+    const cols = ['#e05a6a', '#f2c84a', '#6ac06a', '#6a9ae0', '#e88a3a', '#ffffff', '#d070b0'];
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 50;
+      this.add({ kind: 'chip', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, g: 45, col: cols[i % cols.length], life: 1.6 + Math.random(), size: Math.random() < 0.3 ? 2 : 1 });
+    }
+  }
+  notes(x, y) { for (let i = 0; i < 2; i++) this.add({ kind: 'icon', id: 'music', x: x + (Math.random() - 0.5) * 16, y, vx: (Math.random() - 0.5) * 8, vy: -16, life: 1.4, delay: i * 0.3 }); }
   hearts(x, y) { for (let i = 0; i < 3; i++) this.add({ kind: 'icon', id: 'heart', x: x + (i - 1) * 5, y: y - i * 3, vx: (i - 1) * 4, vy: -14, life: 1.3, delay: i * 0.15 }); }
   zzz(x, y) { this.add({ kind: 'z', x, y, vx: 3, vy: -6, life: 2.2 }); }
   drops(x, y) { for (let i = 0; i < 6; i++) this.add({ kind: 'chip', x: x + Math.random() * 8 - 4, y: y - 6, vx: Math.random() * 10 - 5, vy: 10 + Math.random() * 10, g: 120, col: i % 2 ? '#7ac0e0' : '#b8e4f4', life: 0.45 }); }

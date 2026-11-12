@@ -4,6 +4,7 @@ import { ITEMS } from '../config/items.js';
 import { cropSprite } from './sprites_nature.js';
 import { grannySprite } from './sprites_chars.js';
 import * as B from './sprites_build.js';
+import * as V from './sprites_village.js';
 
 const SEED_COL = { radish: '#d8466a', carrot: C.orange, potato: '#b08850', cucumber: '#4f8a3a', sunflower: C.yellow, pumpkin: C.orangeD };
 
@@ -53,6 +54,10 @@ const DRAW = {
   geranium: g => g.drawImage(B.geraniumSprite(), 0, 0),
   sellbox: g => g.drawImage(B.sellboxSprite(), 0, -3),
   van: g => g.drawImage(B.vanSprite(), 0, 0, 48, 40, 0, 2, 16, 13),
+  cottage: g => g.drawImage(V.cottageSprite('none', false), 0, 0, 64, 80, 1, 0, 14, 16),
+  selpo: g => g.drawImage(V.selpoSprite(false), 0, 0, 64, 78, 0, 0, 16, 16),
+  banya: g => g.drawImage(V.banyaSprite(false), 0, 0, 48, 72, 2, 0, 12, 16),
+  club: g => g.drawImage(V.clubSprite(false, true), 0, 0, 80, 88, 0, 0, 16, 16),
 
   // кнопки интерфейса
   backpack: g => { R(g, 3, 4, 10, 11, '#a0683c'); R(g, 3, 4, 10, 1, '#c08550'); R(g, 12, 5, 1, 10, '#7d4e2c'); R(g, 3, 4, 10, 5, '#b8783e'); R(g, 3, 9, 10, 1, '#7d4e2c'); R(g, 7, 8, 2, 3, C.brass); R(g, 5, 1, 6, 3, '#7d4e2c'); R(g, 6, 2, 4, 2, 'rgba(0,0,0,0)'); g.clearRect(6, 2, 4, 2); R(g, 4, 11, 8, 3, '#94603a'); },
@@ -87,6 +92,7 @@ export function icon(id) {
   return spr('icon-' + id, 16, 16, g => {
     const d = DRAW[id];
     if (d) return d(g);
+    if (id.startsWith('npc_')) { g.drawImage(V.villagerSprite(id.slice(4), 'down', 0), 0, 0, 16, 14, 0, 1, 16, 14); return; }
     const it = ITEMS[id];
     if (it && it.cat === 'seed') {
       // пакетик семян

@@ -34,6 +34,7 @@ export function newGame(seed = (Math.random() * 1e9) | 0) {
     shop: { day: SHOP.first },
     respawns: [],
     stage: 0,
+    villagers: {},
   };
   applyTutorialStart(state, 0);
   return state;

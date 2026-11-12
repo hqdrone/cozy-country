@@ -62,23 +62,43 @@ export const SHOP = {
   ],
 };
 
-// Развитие поселения. Сейчас доступен только Хутор, следующая стадия — видимая цель.
+// Развитие поселения. Цель — либо счётчик stat, либо функция count(state).
+const countObj = type => s => Object.values(s.scenes.outside.objects).filter(o => o.type === type).length;
 export const STAGES = [
   { id: 'hutor', name: 'Хутор', goals: [
     { stat: 'earned', n: 300, icon: 'coin' },
     { stat: 'harvested', n: 30, icon: 'radish' },
     { stat: 'built', n: 20, icon: 'fence' },
     { stat: 'quests', n: 5, icon: 'granny' },
+  ],
+    // что открывается при переходе на следующую стадию
+    next: { recipes: ['cottage', 'selpo', 'banya', 'club'] } },
+  { id: 'derevnya', name: 'Деревня', goals: [
+    { count: s => Object.values(s.villagers || {}).filter(v => v.home).length, n: 4, icon: 'cottage' },
+    { count: s => (countObj('selpo')(s) ? 1 : 0) + (countObj('banya')(s) ? 1 : 0) + (countObj('club')(s) ? 1 : 0), n: 3, icon: 'club' },
+    { stat: 'earned', n: 1500, icon: 'coin' },
+    { count: s => Object.values(s.villagers || {}).reduce((a, v) => a + (v.hearts || 0), 0), n: 12, icon: 'heart' },
   ] },
-  { id: 'derevnya', name: 'Деревня' },
   { id: 'selo', name: 'Село' },
   { id: 'pgt', name: 'Посёлок' },
 ];
 
+export const goalValue = (state, g) => (g.count ? g.count(state) : (state.stats[g.stat] || 0));
+
 export function stageProgress(state) {
   const st = STAGES[state.stage || 0];
-  if (!st.goals) return 1;
+  if (!st.goals) return 0;
   let sum = 0;
-  for (const g of st.goals) sum += Math.min(1, (state.stats[g.stat] || 0) / g.n);
+  for (const g of st.goals) sum += Math.min(1, goalValue(state, g) / g.n);
   return sum / st.goals.length;
 }
+// Можно ли перейти на следующую стадию (у следующей стадии должны быть свои цели — иначе она ещё «в будущем»)
+export function canStageUp(state) {
+  const nx = STAGES[(state.stage || 0) + 1];
+  return !!(nx && nx.goals && stageProgress(state) >= 1);
+}
+
+export const GRANNY_VILLAGE = {
+  ready: 'Пора нам деревней становиться!',
+  build: 'Построй избу — приедут жители',
+};

@@ -5,7 +5,8 @@ import { OBJECTS } from '../config/objects.js';
 import { ITEMS } from '../config/items.js';
 import { CROPS } from '../config/crops.js';
 import { RECIPES, recipeById, TOOLS } from '../config/recipes.js';
-import { TUTORIAL, QUESTS, DAILY_ASKS, GRANNY_LINES, SHOP } from '../config/story.js';
+import { TUTORIAL, QUESTS, DAILY_ASKS, GRANNY_LINES, SHOP, STAGES, canStageUp, GRANNY_VILLAGE } from '../config/story.js';
+import { VILLAGERS, VILLAGER_ORDER, SELPO } from '../config/villagers.js';
 import { rand, randInt } from './rng.js';
 import {
   DAY_START, objAt, addObj, removeObj, walkable, ground, canFit, defOf,
@@ -33,9 +34,13 @@ function gain(p, items, fx, at) {
 }
 export const canCapacity = p => TOOLS.can.capacity[p.tools.can] || 8;
 
-export function shopOpen(s) {
+export function shopOpen(s, which = 'van') {
+  if (which === 'selpo') return !!findObj(s.scenes.outside, o => o.type === 'selpo') && s.time >= SELPO.open && s.time < SELPO.close;
   return s.day === s.shop.day && s.time >= SHOP.open && s.time < SHOP.close;
 }
+export const shopStock = which => (which === 'selpo' ? SELPO.stock : SHOP.stock);
+const villagers = s => (s.villagers = s.villagers || {});
+export const canPay = (p, r) => hasItems(p, r.in) && p.coins >= (r.coins || 0);
 
 // ---------- Движение и сцены ----------
 H.move = (s, p, a) => {
@@ -143,8 +148,9 @@ export function recipeVisible(s, p, r) {
 }
 
 function doCraft(s, p, r, fx) {
-  if (!recipeVisible(s, p, r) || !hasItems(p, r.in)) return false;
+  if (!recipeVisible(s, p, r) || !canPay(p, r)) return false;
   addItems(p, r.in, -1);
+  if (r.coins) p.coins -= r.coins;
   if (r.out) addItems(p, r.out);
   if (r.tool) {
     p.tools[r.tool[0]] = r.tool[1];
@@ -168,23 +174,35 @@ export function placeCheck(s, p, item, x, y) {
   const it = ITEMS[item];
   if (!it || !it.place || p.scene !== 'outside') return false;
   const sc = sceneOf(s, p);
-  const type = it.place;
+  const type = it.place, d = OBJECTS[type];
   if (!canFit(sc, type, x, y)) return false;
-  const g = ground(sc, x, y);
-  if (g === 'd' && type !== 'path' && type !== 'gate') return false; // дороги оставляем свободными
-  if (g === 'f' && type !== 'path') return false;
-  if (OBJECTS[type].solid) {
-    for (const id in s.players) {
+  for (let dy = 0; dy < (d.h || 1); dy++) for (let dx = 0; dx < (d.w || 1); dx++) {
+    const g = ground(sc, x + dx, y + dy);
+    if (g === 'd' && type !== 'path' && type !== 'gate') return false; // дороги оставляем свободными
+    if (g === 'f' && type !== 'path') return false;
+    if (d.solid) for (const id in s.players) {
       const q = s.players[id];
-      if (q.scene === p.scene && q.x === x && q.y === y) return false;
+      if (q.scene === p.scene && q.x === x + dx && q.y === y + dy) return false;
     }
+  }
+  // нельзя загораживать двери домов (клетку перед дверью)
+  if (d.solid) for (const k in sc.objects) {
+    const o = sc.objects[k], od = OBJECTS[o.type] || {};
+    if (!od.door || o === undefined) continue;
+    const fx = o.x + od.door[0], fy = o.y + od.door[1];
+    if (fx >= x && fx < x + (d.w || 1) && fy >= y && fy < y + (d.h || 1)) return false;
+  }
+  // перед дверью большой постройки должно быть свободно
+  if (d.door) {
+    const fx = x + d.door[0], fy = y + d.door[1];
+    if (!walkable(sc, fx, fy)) return false;
   }
   return true;
 }
 
 export function canAutoCraft(s, p, item) {
   const r = RECIPES.find(r => r.out && r.out[item] && !r.where);
-  return r && recipeVisible(s, p, r) && hasItems(p, r.in) ? r : null;
+  return r && recipeVisible(s, p, r) && canPay(p, r) ? r : null;
 }
 
 H.place = (s, p, a, fx) => {
@@ -217,6 +235,11 @@ H.remove = (s, p, a, fx) => {
   const o = removeCheck(s, p, a.x, a.y);
   if (!o) return false;
   if (o.items) addItems(p, o.items);
+  if (o.type === 'cottage' && o.who) {
+    const v = villagers(s)[o.who];
+    if (v) v.home = null; // житель подождёт новую избу
+    fx.push({ t: 'moveOut', who: o.who });
+  }
   removeObj(sceneOf(s, p), o);
   addItems(p, { [defOf(o).item]: 1 });
   fx.push({ t: 'pickup', x: o.x, y: o.y, item: defOf(o).item });
@@ -239,8 +262,9 @@ H.store = (s, p, a, fx) => {
 
 // ---------- Автолавка ----------
 H.buy = (s, p, a, fx) => {
-  if (!shopOpen(s)) return false;
-  const e = SHOP.stock[a.i];
+  const which = a.shop || 'van';
+  if (!shopOpen(s, which)) return false;
+  const e = shopStock(which)[a.i];
   if (!e || p.coins < e.price) return false;
   if (e.tool && (p.tools[e.tool[0]] || 0) >= e.tool[1]) return false;
   p.coins -= e.price;
@@ -269,6 +293,8 @@ H.talk = (s, p, a, fx) => {
       gain(p, { pie: 1 }, fx, p);
     }
   }
+  if (tutorialDone && canStageUp(s) && (s.stage || 0) === 0) lines.push({ text: GRANNY_VILLAGE.ready, icon: 'house' });
+  if (tutorialDone && (s.stage || 0) >= 1 && !findObj(s.scenes.outside, o => o.type === 'cottage')) lines.push({ text: GRANNY_VILLAGE.build, icon: 'cottage' });
   if (!tutorialDone) {
     const st = TUTORIAL[s.tutorial.step];
     lines.push({ text: st.say, icon: st.icon });
@@ -309,6 +335,84 @@ H.talk = (s, p, a, fx) => {
 };
 
 H.pet = (s, p, a, fx) => { stat(s, 'pets'); fx.push({ t: 'hearts', x: a.x, y: a.y }); };
+
+// ---------- Развитие поселения ----------
+H.advanceStage = (s, p, a, fx) => {
+  if (!canStageUp(s)) return false;
+  const cur = STAGES[s.stage || 0];
+  s.stage = (s.stage || 0) + 1;
+  if (cur.next && cur.next.recipes) for (const r of cur.next.recipes) if (!s.recipes.includes(r)) s.recipes.push(r);
+  villagers(s);
+  fx.push({ t: 'stageUp', stage: s.stage, name: STAGES[s.stage].name });
+};
+
+// ---------- Жители ----------
+H.talkVillager = (s, p, a, fx) => {
+  const def = VILLAGERS[a.npc], v = villagers(s)[a.npc];
+  if (!def || !v || !v.home) return false;
+  const lines = [];
+  stat(s, 'talks');
+  if (v.greetDay !== s.day) {
+    v.greetDay = s.day;
+    lines.push({ text: def.hello[s.day % def.hello.length], icon: 'npc_' + a.npc });
+  }
+  if (v.ask && hasItems(p, v.ask.need)) {
+    addItems(p, v.ask.need, -1);
+    p.coins += v.ask.coins; s.stats.earned = (s.stats.earned || 0) + v.ask.coins;
+    fx.push({ t: 'coins', n: v.ask.coins });
+    v.ask = null; v.askDay = s.day;
+    v.hearts = Math.min(10, (v.hearts || 0) + 1);
+    lines.push({ text: 'Спасибо! Выручил!', icon: 'heart' });
+    fx.push({ t: 'friend', who: a.npc, hearts: v.hearts });
+    const gift = def.gifts && def.gifts[v.hearts];
+    if (gift) {
+      if (gift.give) gain(p, gift.give, fx, p);
+      if (gift.coins) { p.coins += gift.coins; fx.push({ t: 'coins', n: gift.coins }); }
+      lines.push({ text: 'А это тебе подарок!', icon: gift.give ? Object.keys(gift.give)[0] : 'coin' });
+    }
+    stat(s, 'quests');
+  } else if (v.ask) {
+    lines.push({ text: 'Принесёшь?', need: v.ask.need });
+  } else if (v.askDay !== s.day) {
+    const item = def.likes[randInt(s, 0, def.likes.length - 1)];
+    const n = ITEMS[item].price >= 25 ? 1 : randInt(s, 2, 5);
+    v.ask = { need: { [item]: n }, coins: Math.ceil(ITEMS[item].price * n * 1.6) + 10 };
+    lines.push({ text: 'Принесёшь?', need: v.ask.need });
+  } else {
+    lines.push({ text: 'Завтра заглядывай!', icon: 'heart' });
+  }
+  fx.push({ t: 'say', who: a.npc, lines });
+};
+
+H.banya = (s, p, a, fx) => {
+  const o = objAt(sceneOf(s, p), a.x, a.y);
+  if (!o || o.type !== 'banya') return false;
+  if (s.banyaDay === s.day) { fx.push({ t: 'say', who: 'granny', lines: [{ text: 'Завтра снова попаришься', icon: 'banya' }] }); return; }
+  s.banyaDay = s.day;
+  stat(s, 'banya');
+  fx.push({ t: 'banya', x: o.x, y: o.y });
+  fx.push({ t: 'say', who: 'granny', lines: [{ text: 'С лёгким паром!', icon: 'heart' }] });
+};
+
+// Заселение: в каждую пустую избу утром въезжает следующий житель
+function settle(s, fx) {
+  if ((s.stage || 0) < 1) return;
+  const vs = villagers(s);
+  for (const o of Object.values(s.scenes.outside.objects)) {
+    if (o.type !== 'cottage' || (o.who && vs[o.who] && vs[o.who].home === `${o.x},${o.y}`)) continue;
+    const who = VILLAGER_ORDER.find(id => !vs[id] || !vs[id].home);
+    if (!who) break;
+    vs[who] = Object.assign(vs[who] || { hearts: 0 }, { home: `${o.x},${o.y}` });
+    o.who = who;
+    fx.push({ t: 'newVillager', who });
+  }
+}
+export function villagerHome(s, id) {
+  const v = (s.villagers || {})[id];
+  if (!v || !v.home) return null;
+  const o = s.scenes.outside.objects[v.home];
+  return o && o.type === 'cottage' ? o : null;
+}
 
 // ---------- Сон и новый день ----------
 H.sleep = (s, p, a, fx) => { endDay(s, fx); };
@@ -359,7 +463,9 @@ export function endDay(s, fx = []) {
     q.scene = 'home'; q.x = HOME_WAKE.x; q.y = HOME_WAKE.y; q.dir = 'down';
   }
   s.stats.days = (s.stats.days || 0) + 1;
-  fx.push({ t: 'morning', day: s.day, coins, sold, shop: s.shop.day === s.day });
+  const arrived = [];
+  settle(s, arrived);
+  fx.push({ t: 'morning', day: s.day, coins, sold, shop: s.shop.day === s.day, arrived: arrived.map(f => f.who) });
 }
 
 // ---------- Обучение ----------
